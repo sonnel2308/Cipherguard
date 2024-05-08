@@ -102,6 +102,18 @@ def read_key_file():
     except:
         print('Error: key.key file does not exist', file=sys.stderr)
         sys.exit(1)
+
+def get_file_iv(file):
+    try:
+        with open(file, 'rb') as f:
+            bytes = f.read()
+            iv = bytes.split(b'\n')[1]
+            key = get_pbk(iv)
+            print(key)
+            fernet = Fernet(key)
+        return fernet
+    except:
+        print(f'Error: Cannot decrypt {file}. No IV was found in the file', file=sys.stderr)
 ###
 
 ### Perform encryption / decryption
@@ -140,11 +152,7 @@ elif args.decrypt:
     decrypt_error_files = list()
     for file in files:
         if args.password:
-            with open(file, 'rb') as f:
-                bytes = f.read()
-                iv = bytes.split(b'\n')[1]
-                key = get_pbk(iv)
-                fernet = Fernet(key)
+            fernet = get_file_iv(file)
 
         decrypted = ''
         try:
