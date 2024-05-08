@@ -30,12 +30,17 @@ group.add_argument('-d', '--decrypt', action='store_true', help='File decryption
 
 parser.add_argument('-l', '--log', action='store_true', help='Print encryption / decryption log')
 parser.add_argument('-r', '--recursive', action='store_true', help='Recursively encrypt / decrypt files in each subdirectory')
+parser.add_argument('-f', '--file', nargs='+', help='Specify a file to encrypt / decrypt')
 
 args = parser.parse_args()
 ###
 
 ### Files to encrypt / decrypt
-files = [x for x in os.listdir() if os.path.isfile(x)]
+files = []
+if args.file:
+    files = args.file
+else:
+    files = [x for x in os.listdir() if os.path.isfile(x)]
 
 def recurse_dir(dirname):
     global files
@@ -47,15 +52,16 @@ def recurse_dir(dirname):
             recurse_dir(file)
 
 if args.recursive:
-    print('Recursion')
     for file in os.listdir():
-        if os.path.isdir(file):
+        if os.path.isdir(file) and file != '.git':
             dirname = './' + file
             recurse_dir(dirname)
 
-print(files)
+if args.log:
+    print(files)
+###
 
-
+### Perform encryption / decryption
 if args.encrypt:
     print('Encrypting...')
     # Key generation
@@ -95,3 +101,4 @@ elif args.decrypt:
     except:
         print('Error decrypting', file=sys.stderr)
         sys.exit(1)
+###
