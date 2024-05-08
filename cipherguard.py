@@ -3,8 +3,11 @@
 import os
 import sys
 import argparse
+import base64
 from argparse import RawDescriptionHelpFormatter
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 ### Argument Handling
 desc = '''
@@ -31,6 +34,7 @@ group.add_argument('-d', '--decrypt', action='store_true', help='File decryption
 parser.add_argument('-l', '--log', action='store_true', help='Print encryption / decryption log')
 parser.add_argument('-r', '--recursive', action='store_true', help='Recursively encrypt / decrypt files in each subdirectory')
 parser.add_argument('-f', '--file', nargs='+', help='Specify a file to encrypt / decrypt')
+parser.add_argument('-p', '--password', nargs=1, help='Specify a passphrase key to encrypt / decrypt the files with')
 
 args = parser.parse_args()
 ###
@@ -61,13 +65,42 @@ if args.log:
     print(files)
 ###
 
+# Password-based key
+key = None
+iv = None
+if args.password and args.encrypt:
+    iv = os.urandom(16)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=iv,
+        iterations=480000,
+    )
+    password = args.password[0].encode('utf-8')
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+
+def get_pbk(iv):
+    password = None
+    if args.password:
+        password = args.password[0].encode('utf-8')
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=iv,
+        iterations=480000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    return key
+###
+
 ### Perform encryption / decryption
 if args.encrypt:
     print('Encrypting...')
     # Key generation
-    key = Fernet.generate_key()
-    with open('key.key', 'wb') as f:
-        f.write(key)
+    if not key:
+        key = Fernet.generate_key()
+        with open('key.key', 'wb') as f:
+            f.write(key)
 
     fernet = Fernet(key)
 
@@ -78,27 +111,49 @@ if args.encrypt:
                 encrypted = fernet.encrypt(f.read())
             with open(file, 'wb') as f:
                 f.write(encrypted)
+                if iv:
+                    f.write('\n'.encode('utf-8'))
+                    f.write(iv)
             if args.log:
                 print(file)
 elif args.decrypt:
+    print('Decrypting...')
+    # Obtain key
     try:
-        print('Decrypting...')
-        # Obtain key
-        key = ''
-        with open('key.key', 'rb') as f:
-            key = f.read().decode('utf-8')
+        if not key:
+            with open('key.key', 'rb') as f:
+                key = f.read().decode('utf-8')
+    except:
+        print('Error: key.key file does not exist', file=sys.stderr)
+        sys.exit(1)
+    
+    fernet = None
+    if key:
         fernet = Fernet(key)
 
-        for file in files:
-            if os.path.isfile(file) and file != 'cipherguard.py' and file != 'key.key':
-                decrypted = ''
+    # Files that could not be decrypted
+    decrypt_error_files = list()
+    for file in files:
+        if os.path.isfile(file) and file != 'cipherguard.py' and file != 'key.key':
+            if args.password:
+                with open(file, 'rb') as f:
+                    bytes = f.read()
+                    iv = bytes.split(b'\n')[1]
+                    key = get_pbk(iv)
+                    fernet = Fernet(key)
+
+            decrypted = ''
+            try:
                 with open(file, 'rb') as f:
                     decrypted = fernet.decrypt(f.read())
                 with open(file, 'wb') as f:
                     f.write(decrypted)
                 if args.log:
                     print(file)
-    except:
-        print('Error decrypting', file=sys.stderr)
-        sys.exit(1)
+            except:
+                decrypt_error_files.append(file)
+                continue
+
+    if decrypt_error_files:
+        print(f'Could not decrypt files: {decrypt_error_files}')
 ###
