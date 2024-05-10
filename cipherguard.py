@@ -9,6 +9,10 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+# Cannot decrypt file greater than 18250 using Password-Based Decryption (PBD)
+# Fragment file
+MAX_PBD_SIZE = 18250
+
 ### Argument Handling
 desc = '''
 _________ .__       .__                    ________                       .___
@@ -103,7 +107,7 @@ def read_key_file():
         print('Error: key.key file does not exist', file=sys.stderr)
         sys.exit(1)
 
-def get_file_iv(file):
+def get_pbd_key(file):
     try:
         with open(file, 'rb') as f:
             bytes = f.read()
@@ -114,6 +118,15 @@ def get_file_iv(file):
         return fernet
     except:
         print(f'Error: Cannot decrypt {file}. No IV was found in the file', file=sys.stderr)
+
+# TODO: Cannot use Fernet of entire file encryption to encrypt chunks of file
+# def fragment_decrypt_file(file, fernet):
+#     decrypted = b''
+#     with open(file, 'rb') as f:
+#         while bytes := f.read(MAX_PBD_SIZE):
+#             decrypted += fernet.decrypt(bytes)
+#     with open(file, 'wb') as f:
+#         f.write(decrypted)
 ###
 
 ### Perform encryption / decryption
@@ -152,9 +165,12 @@ elif args.decrypt:
     decrypt_error_files = list()
     for file in files:
         if args.password:
-            fernet = get_file_iv(file)
+            fernet = get_pbd_key(file)
 
-        decrypted = ''
+        # if os.stat(file).st_size > MAX_PBD_SIZE:
+        #     fragment_decrypt_file(file, fernet)
+        # else:
+        decrypted = None
         try:
             with open(file, 'rb') as f:
                 decrypted = fernet.decrypt(f.read())
